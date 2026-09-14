@@ -1,0 +1,7 @@
+{
+  "name": "NutriScan AI - Photo Calorie & Nutrition Tracker",
+  "description": "โปรแกรมนับแคลอรี่จากรูปถ่ายและข้อความ คำนวณ BMR/TDEE วิเคราะห์สารอาหารครบถ้วน เตือนดื่มน้ำ บันทึกออกกำลังกาย ประเมิน Calorie Deficit ซิงค์อุปกรณ์สวมใส่ พร้อม Dark Mode และส่งออก PDF/CSV",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
