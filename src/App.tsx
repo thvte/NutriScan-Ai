@@ -17,12 +17,14 @@ import {
   WaterLogEntry,
   WearableData,
 } from './types';
+import { DEFAULT_USER_PROFILE } from './data/nutritionConstants';
 import {
-  DEFAULT_USER_PROFILE,
-  PRESET_FOOD_LOGS,
-  PRESET_EXERCISE_LOGS,
-  PRESET_WATER_LOGS,
-} from './data/nutritionConstants';
+  loadUserData,
+  saveProfile,
+  saveFoodLogs,
+  saveExerciseLogs,
+  saveWaterLogs,
+} from './lib/db';
 import { Utensils, Droplet, Dumbbell, ChefHat, BarChart3 } from 'lucide-react';
 
 export default function App() {
@@ -32,51 +34,17 @@ export default function App() {
     return saved ? JSON.parse(saved) : false;
   });
 
-  // User Profile state
-  const [userProfile, setUserProfile] = useState<UserProfile>(() => {
-    try {
-      const saved = localStorage.getItem('nutriscan_user_profile');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object') {
-          return { ...DEFAULT_USER_PROFILE, ...parsed };
-        }
-      }
-    } catch (e) {
-      console.warn('Error reading saved user profile', e);
-    }
-    return DEFAULT_USER_PROFILE;
-  });
+  // User Profile state (โหลดจากคลาวด์ภายหลัง)
+  const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_USER_PROFILE);
 
-  // Food logs state
-  const [foodLogs, setFoodLogs] = useState<FoodLogEntry[]>(() => {
-    try {
-      const saved = localStorage.getItem('nutriscan_food_logs');
-      return saved ? JSON.parse(saved) : PRESET_FOOD_LOGS;
-    } catch {
-      return PRESET_FOOD_LOGS;
-    }
-  });
+  // Food logs state (โหลดจากคลาวด์ภายหลัง)
+  const [foodLogs, setFoodLogs] = useState<FoodLogEntry[]>([]);
 
-  // Exercise logs state
-  const [exerciseLogs, setExerciseLogs] = useState<ExerciseLogEntry[]>(() => {
-    try {
-      const saved = localStorage.getItem('nutriscan_exercise_logs');
-      return saved ? JSON.parse(saved) : PRESET_EXERCISE_LOGS;
-    } catch {
-      return PRESET_EXERCISE_LOGS;
-    }
-  });
+  // Exercise logs state (โหลดจากคลาวด์ภายหลัง)
+  const [exerciseLogs, setExerciseLogs] = useState<ExerciseLogEntry[]>([]);
 
-  // Water logs state
-  const [waterLogs, setWaterLogs] = useState<WaterLogEntry[]>(() => {
-    try {
-      const saved = localStorage.getItem('nutriscan_water_logs');
-      return saved ? JSON.parse(saved) : PRESET_WATER_LOGS;
-    } catch {
-      return PRESET_WATER_LOGS;
-    }
-  });
+  // Water logs state (โหลดจากคลาวด์ภายหลัง)
+  const [waterLogs, setWaterLogs] = useState<WaterLogEntry[]>([]);
 
   // Wearables state
   const [wearableData, setWearableData] = useState<WearableData>(() => {
@@ -113,6 +81,9 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isPromptOpen, setIsPromptOpen] = useState(false);
 
+  // โหลดข้อมูลจากคลาวด์เสร็จหรือยัง (กันบันทึกทับตอนยังไม่โหลด)
+  const [dataLoaded, setDataLoaded] = useState(false);
+
   // Sync Dark Mode with document element
   useEffect(() => {
     if (darkMode) {
@@ -123,50 +94,45 @@ export default function App() {
     localStorage.setItem('nutriscan_dark_mode', JSON.stringify(darkMode));
   }, [darkMode]);
 
-  // Sync local data to localStorage
+  // โหลดข้อมูลของผู้ใช้จากคลาวด์ (Supabase) เมื่อเปิดแอป
   useEffect(() => {
-    localStorage.setItem('nutriscan_user_profile', JSON.stringify(userProfile));
-  }, [userProfile]);
-
-  useEffect(() => {
-    localStorage.setItem('nutriscan_food_logs', JSON.stringify(foodLogs));
-  }, [foodLogs]);
-
-  useEffect(() => {
-    localStorage.setItem('nutriscan_exercise_logs', JSON.stringify(exerciseLogs));
-  }, [exerciseLogs]);
-
-  useEffect(() => {
-    localStorage.setItem('nutriscan_water_logs', JSON.stringify(waterLogs));
-  }, [waterLogs]);
+    let active = true;
+    (async () => {
+      try {
+        const cloud = await loadUserData();
+        if (!active) return;
+        if (cloud.profile) {
+          setUserProfile((prev) => ({ ...DEFAULT_USER_PROFILE, ...prev, ...cloud.profile }));
+        }
+        setFoodLogs(cloud.foodLogs);
+        setExerciseLogs(cloud.exerciseLogs);
+        setWaterLogs(cloud.waterLogs);
+      } catch (e) {
+        console.warn('โหลดข้อมูลจากคลาวด์ไม่สำเร็จ', e);
+      } finally {
+        if (active) setDataLoaded(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('nutriscan_wearable', JSON.stringify(wearableData));
   }, [wearableData]);
 
-  // Auto-sync data to backend Cloud Store API
+  // บันทึกข้อมูลขึ้นคลาวด์ (Supabase) แยกรายคน — หลังโหลดเสร็จเท่านั้น (กันข้อมูลหาย)
   useEffect(() => {
-    const syncToBackend = async () => {
-      try {
-        await fetch('/api/user-data', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            profile: userProfile,
-            foodLogs,
-            exerciseLogs,
-            waterLogs,
-            wearable: wearableData,
-          }),
-        });
-      } catch (err) {
-        // non-blocking
-      }
-    };
-
-    const timeout = setTimeout(syncToBackend, 1200);
+    if (!dataLoaded) return;
+    const timeout = setTimeout(() => {
+      saveProfile(userProfile);
+      saveFoodLogs(foodLogs);
+      saveExerciseLogs(exerciseLogs);
+      saveWaterLogs(waterLogs);
+    }, 1200);
     return () => clearTimeout(timeout);
-  }, [userProfile, foodLogs, exerciseLogs, waterLogs, wearableData]);
+  }, [dataLoaded, userProfile, foodLogs, exerciseLogs, waterLogs]);
 
   // Handlers
   const handleAddFoodLog = (newLog: FoodLogEntry) => {
